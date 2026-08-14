@@ -5,8 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#FFFFFF" id="metaTheme">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Notes">
+<meta name="description" content="Six colourful boxes for tasks, thoughts, plans and reminders.">
 <title>Notes</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" href="icons/icon-192.png" sizes="192x192" type="image/png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -334,6 +340,20 @@ html[data-theme="dark"] .toast button{color:#2563EB;}
 .mic.rec{color:#FF3B5C;animation:pulse 1.2s ease-in-out infinite;}
 @keyframes pulse{50%{opacity:.4;}}
 
+/* ---------- install hint ---------- */
+.install{display:none;align-items:flex-start;gap:11px;background:var(--glass);border:1px solid var(--edge);
+  border-radius:20px;padding:13px 14px;margin-bottom:14px;backdrop-filter:blur(18px);
+  box-shadow:0 8px 24px -16px rgba(20,22,37,.4);}
+.install.on{display:flex;animation:slidein .4s var(--ease);}
+.install .ri{width:34px;height:34px;border-radius:12px;display:grid;place-items:center;color:#fff;flex-shrink:0;
+  background:linear-gradient(135deg,#7C5CFC,#60C8FF);}
+.install b{font-family:'Outfit',sans-serif;font-weight:600;font-size:13.5px;display:block;letter-spacing:-.01em;}
+.install p{margin:3px 0 0;font-size:12px;color:var(--soft);line-height:1.5;}
+.install .x{background:none;border:0;color:var(--faint);cursor:pointer;padding:3px;border-radius:8px;display:flex;flex-shrink:0;}
+.install .x:hover{color:var(--ink);background:var(--hover);}
+.instbtn{margin-top:9px;border:0;border-radius:11px;padding:8px 14px;font-size:12.5px;font-weight:600;cursor:pointer;
+  background:linear-gradient(135deg,#7C5CFC,#60C8FF);color:#fff;}
+
 @supports not ((backdrop-filter: blur(4px)) or (-webkit-backdrop-filter: blur(4px))){
   :root{--glass:rgba(255,255,255,.9);}
   html[data-theme="dark"]{--glass:rgba(30,33,46,.95);}
@@ -367,6 +387,16 @@ html[data-reduce="1"] .banner,html[data-reduce="1"] .blankico{opacity:1 !importa
     <button class="ghost" id="btnSearch" aria-label="Search all notes"></button>
     <button class="ghost" id="btnCal" aria-label="Calendar"></button>
     <button class="ghost" id="btnSet" aria-label="Settings"></button>
+  </div>
+
+  <div class="install" id="installHint">
+    <span class="ri" id="instIcon"></span>
+    <span style="flex:1">
+      <b id="instTitle"></b>
+      <p id="instText"></p>
+      <button class="instbtn" id="instBtn" hidden>Install app</button>
+    </span>
+    <button class="x" id="instClose" aria-label="Dismiss"></button>
   </div>
 
   <div id="homeBanner"></div>
@@ -690,6 +720,11 @@ function dailyDueToday(n){
 }
 
 /* ---------------- selectors ---------------- */
+/* Thoughts and Reminders are not tasks: a thought is something you had, a
+   reminder is something that will nudge you. Neither belongs in "open tasks". */
+const TASK_CATS = {now:1, park:1, tomorrow:1, daily:1};
+function isTask(n){ return !!TASK_CATS[n.cat]; }
+
 function live(){ return S.notes.filter(function(n){ return !n.deletedAt; }); }
 function binned(){ return S.notes.filter(function(n){ return !!n.deletedAt; }).sort(function(a,b){ return b.deletedAt - a.deletedAt; }); }
 function inCat(id){
@@ -717,7 +752,7 @@ function counts(){
   const t = today();
   var open = 0, dueToday = 0, over = 0, doneToday = 0, reminders = 0;
   L.forEach(function(n){
-    if (!n.done) open++;
+    if (!n.done && isTask(n)) open++;
     const ts = n.dueDate || n.reminderTime;
     if (ts && dk(ts) === t && !n.done) dueToday++;
     if (isOverdue(n)) over++;
@@ -1556,7 +1591,7 @@ function hl(text, q){
 }
 const STAT_VIEWS = {
   pending: {title:'Open tasks',   blank:'Everything is done. Nothing is waiting on you.',
-            fn:function(n){ return !n.done; }},
+            fn:function(n){ return !n.done && isTask(n); }},
   today:   {title:'Due today',    blank:'Nothing is scheduled for today.',
             fn:function(n){ const ts = n.dueDate || n.reminderTime; return !!ts && dk(ts) === today() && !n.done; }},
   over:    {title:'Overdue',      blank:'Nothing is overdue. Good.',
@@ -1889,7 +1924,7 @@ function doImport(file){
 
 /* ---------------- reminders engine ---------------- */
 var lastDayCheck = today();
-function reminderTick(){
+function reminderTick(quiet){
   const now = Date.now();
   var changed = false, fired = [];
   live().forEach(function(n){
@@ -1906,8 +1941,9 @@ function reminderTick(){
   });
   if (changed) save();
   if (fired.length){
-    fired.forEach(function(n){ notify('Reminder \u00b7 ' + CAT[n.cat].name, n.text.split('\n')[0].slice(0,120)); });
-    showDueSheet(fired[0]);
+    if (!quiet) fired.forEach(function(n){ notify('Reminder \u00b7 ' + CAT[n.cat].name, n.text.split('\n')[0].slice(0,120)); });
+    if (fired.length === 1) showDueSheet(fired[0]);
+    else showMissedSheet(fired);
     renderHome();
     if (view.cat) renderPanel();
   }
@@ -1917,6 +1953,31 @@ function reminderTick(){
     renderHome();
     if (view.cat) renderPanel();
   }
+}
+function showMissedSheet(list){
+  openSheet(CAT.remind,
+    '<div class="shead">' + SVG(P.bell,17) + list.length + ' reminders came due</div>' +
+    '<p class="hint" style="margin:0 2px 12px">These fired while the app was closed.</p>' +
+    '<div style="display:flex;flex-direction:column;gap:8px;max-height:46dvh;overflow:auto">' +
+      list.map(function(n){
+        const cat = CAT[n.cat];
+        return '<div class="rowbtn" style="cursor:default;border:1.5px solid var(--hair)">' +
+          '<span class="ri" style="background:' + cat.grad + '">' + SVG(P[cat.icon],16) + '</span>' +
+          '<span style="flex:1;min-width:0"><span class="rowtxt">' + esc(n.text.split('\n')[0].slice(0,60)) + '</span>' +
+          '<span class="rowsub">' + esc(cat.name) + '</span></span>' +
+          '<button class="opt" data-mdone="' + n.id + '">Done</button></div>';
+      }).join('') +
+    '</div>' +
+    '<div class="sacts"><button class="sbtn cancel" data-close="1">Close</button></div>',
+    function(root){
+      root.addEventListener('click', function(e){
+        const b = e.target.closest('[data-mdone]'); if (!b) return;
+        const n = byId(b.getAttribute('data-mdone')); if (!n) return;
+        setDone(n, true);
+        b.textContent = 'Done \u2713'; b.disabled = true;
+        renderHome(); if (view.cat) renderPanel();
+      });
+    });
 }
 function showDueSheet(n){
   openSheet(CAT[n.cat],
@@ -1998,8 +2059,9 @@ async function boot(){
   showQuickFab();
   initDrag();
   save();
-  setInterval(reminderTick, 20000);
-  setTimeout(reminderTick, 1500);
+  setInterval(function(){ reminderTick(false); }, 20000);
+  /* catch up quietly on anything that came due while the app was closed */
+  setTimeout(function(){ reminderTick(true); }, 1200);
 }
 
 function showQuickFab(){
@@ -2148,7 +2210,79 @@ if (window.matchMedia){
   } catch(e){}
 }
 
-boot();
+/* ================= PWA ================= */
+const standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+const isIOS = /iP(hone|ad|od)/.test(navigator.userAgent) ||
+              (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+var deferredPrompt = null;
+
+if ('serviceWorker' in navigator && location.protocol.indexOf('http') === 0){
+  window.addEventListener('load', function(){
+    navigator.serviceWorker.register('sw.js').then(function(reg){
+      reg.addEventListener('updatefound', function(){
+        const sw = reg.installing;
+        if (!sw) return;
+        sw.addEventListener('statechange', function(){
+          if (sw.state === 'installed' && navigator.serviceWorker.controller){
+            toast('A new version is ready', 'Reload', function(){
+              sw.postMessage('skip-waiting');
+              setTimeout(function(){ location.reload(); }, 200);
+            });
+          }
+        });
+      });
+    }).catch(function(){ /* offline support simply will not be available */ });
+  });
+}
+
+window.addEventListener('beforeinstallprompt', function(e){
+  e.preventDefault();
+  deferredPrompt = e;
+  showInstallHint('android');
+});
+
+function showInstallHint(kind){
+  if (standalone) return;
+  if (S.meta.installHidden) return;
+  const box = $('installHint');
+  $('instIcon').innerHTML = SVG(P.down,16);
+  $('instClose').innerHTML = SVG(P.close,16);
+  if (kind === 'android'){
+    $('instTitle').textContent = 'Install Notes';
+    $('instText').textContent = 'Add it to your home screen to open it like a normal app, even offline.';
+    $('instBtn').hidden = false;
+  } else {
+    $('instTitle').textContent = 'Add Notes to your Home Screen';
+    $('instText').textContent = 'In Safari tap the Share button, then "Add to Home Screen". Reminders and offline use only work once it is installed.';
+    $('instBtn').hidden = true;
+  }
+  box.classList.add('on');
+}
+$('instBtn').onclick = async function(){
+  if (!deferredPrompt) return;
+  deferredPrompt.prompt();
+  try { await deferredPrompt.userChoice; } catch(e){}
+  deferredPrompt = null;
+  $('installHint').classList.remove('on');
+};
+$('instClose').onclick = function(){
+  $('installHint').classList.remove('on');
+  S.meta.installHidden = true; save();
+};
+
+/* launch shortcuts: notes.html?new=1 or ?cat=now */
+function handleLaunchParams(){
+  var q;
+  try { q = new URLSearchParams(location.search); } catch(e){ return; }
+  const cat = q.get('cat');
+  if (cat && CAT[cat]){ openCat(cat); return; }
+  if (q.get('new')) setTimeout(function(){ openCompose({quick:true}); }, 300);
+}
+
+boot().then(function(){
+  handleLaunchParams();
+  if (isIOS && !standalone) setTimeout(function(){ showInstallHint('ios'); }, 1200);
+});
 </script>
 </body>
 </html>

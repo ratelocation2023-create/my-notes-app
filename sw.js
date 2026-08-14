@@ -1,10 +1,10 @@
 /* Notes — service worker
-   Bump CACHE when you change notes.html, so phones pick up the new version. */
+   Bump CACHE when you change index.html, so phones pick up the new version. */
 const CACHE = 'notes-v1';
 
 const SHELL = [
   './',
-  './notes.html',
+  './index.html',
   './manifest.webmanifest',
   './icons/icon-192.png',
   './icons/icon-512.png',
@@ -50,11 +50,11 @@ self.addEventListener('fetch', function (e) {
       fetch(req)
         .then(function (res) {
           const copy = res.clone();
-          caches.open(CACHE).then(function (c) { c.put('./notes.html', copy); });
+          caches.open(CACHE).then(function (c) { c.put('./index.html', copy); });
           return res;
         })
         .catch(function () {
-          return caches.match('./notes.html').then(function (r) {
+          return caches.match('./index.html').then(function (r) {
             return r || new Response('<h1>Offline</h1><p>Open the app once while online.</p>',
               { headers: { 'Content-Type': 'text/html' } });
           });
